@@ -1,5 +1,6 @@
 package mill.exec
 
+import mill.api.PathRef
 import utest.*
 
 import java.util.concurrent.{CountDownLatch, TimeUnit}
@@ -72,6 +73,26 @@ object ExecutionContextsTests extends TestSuite {
           executor.awaitTermination(5, TimeUnit.SECONDS)
         }
       }
+    }
+
+    test("tasksUseTheSubmittersValidatedPaths") {
+      // A pool thread outlives the evaluation that created it, so each task must use the
+      // submitting evaluation's cache, not the one the thread inherited when it was created
+      val executor = ExecutionContexts.createExecutor(threadCount = 1)
+      val pool = ExecutionContexts.ThreadPool(executor)
+      def seenBy(validated: PathRef.ValidatedPaths) = {
+        val seen = Promise[PathRef.ValidatedPaths]()
+        PathRef.validatedPaths.withValue(validated) {
+          pool.execute(() => seen.success(PathRef.validatedPaths.value))
+        }
+        Await.result(seen.future, 5.seconds)
+      }
+      try {
+        val first = PathRef.ValidatedPaths()
+        val second = PathRef.ValidatedPaths()
+        assert(seenBy(first) eq first)
+        assert(seenBy(second) eq second)
+      } finally executor.shutdown()
     }
   }
 }

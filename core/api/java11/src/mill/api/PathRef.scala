@@ -91,7 +91,7 @@ object PathRef {
    * It is thread-safe and meant to be shared between threads, e.g. in a ThreadLocal.
    */
   class ValidatedPaths() {
-    private val map = new ConcurrentHashMap[Int, PathRef]()
+    private val validated = ConcurrentHashMap.newKeySet[(os.Path, Boolean, Int)]()
 
     /**
      * Revalidates the given [[PathRef]], if required.
@@ -99,23 +99,28 @@ object PathRef {
      * @throws PathRefValidationException If a the [[PathRef]] needs revalidation which fails
      */
     def revalidateIfNeededOrThrow(pathRef: PathRef): Unit = {
-      def mapKey(pr: PathRef): Int = (pr.path, pr.quick, pr.sig).hashCode()
+      val key = (pathRef.path, pathRef.quick, pathRef.sig)
       pathRef.revalidate match {
         case Revalidate.Never => // ok
-        case Revalidate.Once if map.contains(mapKey(pathRef)) => // ok
+        case Revalidate.Once if validated.contains(key) => // ok
         case Revalidate.Once | Revalidate.Always =>
           val changedSig = PathRef.apply(pathRef.path, pathRef.quick).sig
           if (pathRef.sig != changedSig) {
             throw PathRefValidationException(pathRef)
           }
-          val _ = map.put(mapKey(pathRef), pathRef)
+          val _ = validated.add(key)
       }
     }
-    def clear(): Unit = map.clear()
+    def clear(): Unit = validated.clear()
   }
 
+  /**
+   * The paths already validated by the current `Execution.executeTasks` call, which binds it;
+   * `TaskThreadContext` carries it to pool threads. `null` when nothing is bound, in which case
+   * every read is validated, so that a long-lived process doesn't trust a path forever.
+   */
   private[mill] val validatedPaths: DynamicVariable[ValidatedPaths] =
-    DynamicVariable[ValidatedPaths](ValidatedPaths())
+    DynamicVariable[ValidatedPaths](null)
 
   private[mill] val serializedPaths: DynamicVariable[List[PathRef]] =
     DynamicVariable(null)
@@ -308,7 +313,8 @@ object PathRef {
               revalidate = parsed.revalidate,
               fullSig = parsed.fullSig
             )
-            validatedPaths.value.revalidateIfNeededOrThrow(pr)
+            val validated = validatedPaths.value
+            (if (validated != null) validated else ValidatedPaths()).revalidateIfNeededOrThrow(pr)
             storeSerializedPaths(pr)
             pr
           case None =>

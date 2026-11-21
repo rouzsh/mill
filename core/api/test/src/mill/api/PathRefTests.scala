@@ -113,6 +113,54 @@ object PathRefTests extends TestSuite {
       test("qref") - check(quick = true)
       test("ref") - check(quick = false)
     }
+
+    test("revalidate") {
+      def check(quick: Boolean) = withTmpDir { tmpDir =>
+        val file = tmpDir / "foo.txt"
+        os.write(file, "hello")
+        val once = PathRef(file, quick).withRevalidateOnce
+        val always = PathRef(file, quick).withRevalidate(PathRef.Revalidate.Always)
+        val validated = PathRef.ValidatedPaths()
+        validated.revalidateIfNeededOrThrow(once)
+        validated.revalidateIfNeededOrThrow(always)
+
+        os.write.over(file, "changed content")
+        // `Once` paths are trusted after their first check, `Always` paths are checked again
+        validated.revalidateIfNeededOrThrow(once)
+        assertThrows[PathRef.PathRefValidationException](
+          validated.revalidateIfNeededOrThrow(always)
+        )
+        // A new cache checks them again
+        assertThrows[PathRef.PathRefValidationException](
+          PathRef.ValidatedPaths().revalidateIfNeededOrThrow(once)
+        )
+      }
+
+      test("qref") - check(quick = true)
+      test("ref") - check(quick = false)
+    }
+
+    test("revalidate-on-read") {
+      def check(quick: Boolean) = withTmpDir { tmpDir =>
+        val file = tmpDir / "foo.txt"
+        os.write(file, "hello")
+        val json = upickle.write(PathRef(file, quick).withRevalidateOnce)
+        // Like reading a cached task value
+        def read() = upickle.read[PathRef](json, trace = false)
+        read()
+        PathRef.validatedPaths.withValue(PathRef.ValidatedPaths()) {
+          read()
+          os.write.over(file, "changed content")
+          // Within an evaluation, a `Once` path is checked only on its first read
+          read()
+        }
+        // Outside an evaluation, every read is checked
+        assertThrows[PathRef.PathRefValidationException](read())
+      }
+
+      test("qref") - check(quick = true)
+      test("ref") - check(quick = false)
+    }
   }
 
   private def withTmpDir[T](body: os.Path => T): T = {
