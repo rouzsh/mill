@@ -76,5 +76,23 @@ object RelocatedCheckoutTests extends UtestIntegrationTestSuite {
         assert(os.Path(ujson.read(res.out).str) == tester.workspacePath / "build.mill")
       }
     )
+    // A Scala script sees its own file name through `sourcecode.File`
+    test("scalaScript") {
+      val first = integrationTest { tester =>
+        os.write(
+          tester.workspacePath / "Foo.scala",
+          "def main(args: Array[String]) = println(summon[sourcecode.File].value)"
+        )
+        assert(tester.eval("Foo.scala").out.contains(tester.workspacePath.toString))
+        tester.workspacePath
+      }
+      integrationTest { tester =>
+        // Not edited after the move, so the script's cached results are reused
+        moveCheckout(first, tester)
+        val res = tester.eval("Foo.scala")
+        assert(res.isSuccess)
+        assert(os.Path(res.out.trim) == tester.workspacePath / "Foo.scala")
+      }
+    }
   }
 }

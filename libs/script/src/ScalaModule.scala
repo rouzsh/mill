@@ -21,9 +21,18 @@ class ScalaModule(scriptConfig: ScriptModule.Config) extends ScalaModule.Raw(scr
     super.mandatoryScalacOptions() ++ Seq("-Ymagic-offset-header:SOURCE_CODE_START")
   }
 
+  /**
+   * The script's absolute path, which the generated source contains. Mill hashes the script
+   * itself relative to the workspace, so without this input a moved checkout would keep a
+   * generated source that points at the old folder. It is a `String` because an `os.Path` would
+   * also be hashed relative to the workspace. It can go once the generated source no longer
+   * contains absolute paths.
+   */
+  private[mill] def scriptSourcePath: T[String] = Task.Input { scriptConfig.scriptFile.toString }
+
   override def allSourceFiles = Task {
     val original = scriptSource().path
-    val originalSourcecodePath = original.toString
+    val originalSourcecodePath = scriptSourcePath()
     val scalaVer = scalaVersion()
     if (!ScalaModule.isSupportedScalaVersion(scalaVer)) {
       Result.Failure(

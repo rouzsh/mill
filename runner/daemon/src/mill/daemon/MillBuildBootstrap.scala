@@ -277,22 +277,19 @@ class MillBuildBootstrap(
       rootModule = rootModule,
       // Use the current frame's runClasspath (includes mvnDeps and Mill jars) but filter out
       // compile.dest and generatedScriptSources.dest since build code changes are handled
-      // by codesig analysis, not by classLoaderSigHash.
-      millClassloaderSigHash = nestedSharedFrame match {
-        case Some(frame) =>
-          val compileDestPath = os.Path(frame.compileOutput.javaPath)
-          frame.runClasspath
-            .filter { p =>
+      // by codesig analysis, not by classLoaderSigHash. Paths are mapped with the same roots
+      // as the task cache entries that store the hash.
+      millClassloaderSigHash = MappedRoots.withMillDefaults(outPath = output) {
+        nestedSharedFrame match {
+          case Some(frame) =>
+            val compileDestPath = os.Path(frame.compileOutput.javaPath)
+            classpathSigHash(frame.runClasspath.filter { p =>
               val path = os.Path(p.javaPath)
               path != compileDestPath &&
               !path.toString.contains("generatedScriptSources.dest")
-            }
-            .map(p => (os.Path(p.javaPath), p.sig))
-            .hashCode()
-        case None =>
-          millBootClasspathPathRefs
-            .map(p => (os.Path(p.javaPath), p.sig))
-            .hashCode()
+            })
+          case None => classpathSigHash(millBootClasspathPathRefs)
+        }
       },
       millClassloaderIdentityHash = millClassloaderIdentityHash0,
       depth = depth,
@@ -794,6 +791,13 @@ object MillBuildBootstrap {
     case Some(value) => value
     case None => repeatUntilSome(body)
   }
+
+  /**
+   * Hashes the classpath entries' signatures and root-mapped paths (`$WORKSPACE/...`,
+   * `$HOME/...`), so moving the workspace or the home directory doesn't change the hash.
+   */
+  private[daemon] def classpathSigHash(classpath: Seq[PathRefApi]): Int =
+    classpath.map(p => (MappedRoots.encodeKnownRootsInPath(os.Path(p.javaPath)), p.sig)).hashCode()
 
   // Keep this outside of `case class MillBuildBootstrap` because otherwise the lambdas
   // tend to capture the entire enclosing instance, causing memory leaks
