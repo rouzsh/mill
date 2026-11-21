@@ -185,8 +185,14 @@ trait ScalaModule extends JavaModule with TestModule.ScalaModuleBase
   protected def mandatoryScalacOptions: T[Seq[String]] = Task {
     // `-sourceroot` so scalac stores TASTY source paths relative to it.
     if (!util.Version.isAtLeast(scalaVersion(), "3")(using util.Version.MavenOrdering)) Seq()
-    else Seq("-sourceroot", BuildCtx.workspaceRoot.toString())
+    else Seq("-sourceroot", scalacSourceRoot())
   }
+
+  /**
+   * The workspace folder, for `-sourceroot`. A `String`, since an `os.Path` is hashed relative
+   * to the workspace and a moved checkout would keep compiling with the old folder.
+   */
+  private def scalacSourceRoot: Task[String] = Task.Input { BuildCtx.workspaceRoot.toString }
 
   /**
    * Scalac options to activate the compiler plugins.

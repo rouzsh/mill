@@ -7,7 +7,7 @@ import mill.javalib.api.CompilationResult
 import mill.javalib.api.JvmWorkerUtil
 import mill.util.{Jvm, Version}
 
-class ScalaModule(scriptConfig: ScriptModule.Config) extends ScalaModule.Raw(scriptConfig) {
+class ScalaModule(config: ScriptModule.Config) extends ScalaModule.Raw(config) {
   override lazy val millDiscover = Discover[this.type]
 
   override def mandatoryMvnDeps = super.mandatoryMvnDeps() ++ Seq(
@@ -24,9 +24,16 @@ class ScalaModule(scriptConfig: ScriptModule.Config) extends ScalaModule.Raw(scr
     )
   }
 
+  /**
+   * The script's absolute path, which the generated source contains. A `String`, since an
+   * `os.Path` is hashed relative to the workspace and a moved checkout would keep a generated
+   * source naming the old folder.
+   */
+  private def scriptSourcePath: T[String] = Task.Input { scriptConfig.scriptFile.toString }
+
   override def allSourceFiles = Task {
     val original = scriptSource().path
-    val originalSourcecodePath = original.toString
+    val originalSourcecodePath = scriptSourcePath()
     val scalaVer = scalaVersion()
     if (!ScalaModule.isSupportedScalaVersion(scalaVer)) {
       Result.Failure(

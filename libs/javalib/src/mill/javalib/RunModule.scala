@@ -47,9 +47,16 @@ trait RunModule extends WithJvmWorkerModule with RunModuleApi {
    */
   def allForkEnv: T[Map[String, String]] = Task {
     javaHomePathForkEnv() ++ forkEnv() ++ Map(
-      EnvVars.MILL_WORKSPACE_ROOT -> BuildCtx.workspaceRoot.toString
+      EnvVars.MILL_WORKSPACE_ROOT -> runWorkspaceRoot()
     )
   }
+
+  /**
+   * The workspace folder, for tasks that write it, or paths under it, as text. A `String`,
+   * since an `os.Path` is hashed relative to the workspace and a moved checkout would keep
+   * their results naming the old folder.
+   */
+  private def runWorkspaceRoot: Task[String] = Task.Input { BuildCtx.workspaceRoot.toString }
 
   private def javaHomeFromCurrentRuntime: Task[os.Path] = Task.Input {
     // This one is always defined at Java runtime and points to the current one
@@ -257,6 +264,7 @@ trait RunModule extends WithJvmWorkerModule with RunModuleApi {
   def runBackgroundLogToConsole: Boolean = true
 
   private[mill] def launcher0 = Task.Anon {
+    runWorkspaceRoot() // the launcher holds absolute classpath entries
     val launchClasspath =
       if (!runUseArgsFile()) runClasspath().map(_.path)
       else {

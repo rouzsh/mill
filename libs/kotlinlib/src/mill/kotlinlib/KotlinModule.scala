@@ -8,7 +8,7 @@ package kotlinlib
 
 import coursier.core.VariantSelector.VariantMatcher
 import coursier.params.ResolutionParams
-import mill.api.{ModuleRef, Result}
+import mill.api.{BuildCtx, ModuleRef, Result}
 import mill.kotlinlib.worker.api.KotlinWorkerTarget
 import mill.javalib.api.CompilationResult
 import mill.javalib.api.JvmWorkerApi as PublicJvmWorkerApi
@@ -458,6 +458,12 @@ trait KotlinModule extends JavaModule with KotlinModuleApi { outer =>
   }
 
   /**
+   * The workspace folder, for options that hold paths under it. A `String`, since an `os.Path`
+   * is hashed relative to the workspace and a moved checkout would keep the old paths.
+   */
+  private def kotlincWorkspaceRoot: Task[String] = Task.Input { BuildCtx.workspaceRoot.toString }
+
+  /**
    * Mandatory command-line options to pass to the Kotlin compiler
    * that shouldn't be removed by overriding [[kotlincOptions]].
    */
@@ -469,6 +475,7 @@ trait KotlinModule extends JavaModule with KotlinModuleApi { outer =>
     val friendPathsOption = if (kotlinFriendModulesChecked.isEmpty) {
       Seq.empty[String]
     } else {
+      kotlincWorkspaceRoot() // the friend paths are absolute paths under `out/`
       val compilations = Task.traverse(kotlinFriendModulesChecked) { friend => friend.compile }()
       Seq(compilations.map(_.classes.path.toString).mkString("-Xfriend-paths=", ",", ""))
     }
