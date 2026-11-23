@@ -36,7 +36,40 @@ object MappedRootsTests extends TestSuite {
         }
       }
     }
+
+    test("coursierCache") {
+      withTmpDir { tmpDir =>
+        MR.withMillDefaults(outPath = tmpDir / "out", workspacePath = tmpDir) {
+          val jar = coursierCache / "https" / "repo1.maven.org" / "a.jar"
+          val enc = MR.encodeKnownRootsInPath(jar)
+          // Wherever this OS or `COURSIER_CACHE` puts it, not as a path under `$HOME`.
+          assert(enc == "$COURSIER_CACHE/https/repo1.maven.org/a.jar")
+          assert(MR.decodeKnownRootsInPath(enc) == jar.toString)
+          val jdk = archiveCache / "https" / "jdk.tar.gz" / "jdk"
+          val encJdk = MR.encodeKnownRootsInPath(jdk)
+          assert(encJdk == "$COURSIER_ARCHIVE_CACHE/https/jdk.tar.gz/jdk")
+          assert(MR.decodeKnownRootsInPath(encJdk) == jdk.toString)
+        }
+      }
+    }
+
+    test("mostSpecificRootWins") {
+      withTmpDir { tmpDir =>
+        // A home folder inside the workspace, and an out folder outside both.
+        val ws = tmpDir / "ws"
+        MR.withMillDefaults(outPath = tmpDir / "out", workspacePath = ws, homePath = ws / "home") {
+          assert(MR.encodeKnownRootsInPath(ws / "home" / "a") == "$HOME/a")
+          assert(MR.encodeKnownRootsInPath(ws / "b") == "$WORKSPACE/b")
+          assert(MR.encodeKnownRootsInPath(tmpDir / "out" / "c") == "$MILL_OUT/c")
+        }
+      }
+    }
   }
+
+  def coursierCache: os.Path =
+    os.Path(coursier.paths.CoursierPaths.cacheDirectoryPath().toAbsolutePath)
+  def archiveCache: os.Path =
+    os.Path(coursier.paths.CoursierPaths.archiveCacheDirectoryPath().toAbsolutePath)
 
   private def withTmpDir[T](body: os.Path => T): T = {
     val tmpDir = os.Path(Files.createTempDirectory(""))

@@ -24,12 +24,22 @@ trait MappedRootsImpl {
       workspacePath: os.Path = BuildCtx.workspaceRoot,
       homePath: os.Path = os.home
   )(thunk: => T): T = withMapping(
-    Seq(
-      ("MILL_OUT", outPath),
-      ("WORKSPACE", workspacePath),
-      // TODO: add coursier here
-      ("HOME", homePath)
+    (
+      Seq(("MILL_OUT", outPath)) ++
+        // The Coursier caches get their own keys, so paths into them don't depend on where the
+        // cache lives: `COURSIER_CACHE`, or OS-specific defaults like `~/Library/Caches/Coursier`
+        // (macOS) vs `~/.cache/coursier` (Linux).
+        CoursierRoots.roots.filter { case (_, p) =>
+          p != outPath && p != workspacePath && p != homePath
+        } ++
+        Seq(
+          ("WORKSPACE", workspacePath),
+          ("HOME", homePath)
+        )
     )
+      // Most specific first, whatever the layout, e.g. a `COURSIER_CACHE` inside the workspace
+      // or an `--out` folder outside it. Stable, so the usual order is kept for equal depths.
+      .sortBy { case (_, p) => -p.segmentCount }
   )(thunk)
 
   private def logMapping(): Unit = {
@@ -106,4 +116,21 @@ trait MappedRootsImpl {
     }
   }
 
+}
+
+/** The Coursier caches' locations, looked up once per JVM. */
+private object CoursierRoots {
+  lazy val roots: Seq[(String, os.Path)] = {
+    def root(key: String, dir: => java.nio.file.Path) =
+      // Not only non-fatal errors: on Windows, a missing native helper is a `LinkageError`.
+      try Some(key -> os.Path(dir.toAbsolutePath))
+      catch { case scala.util.control.NonFatal(_) | _: LinkageError => None }
+    Seq(
+      root(PathVars.COURSIER_CACHE, coursier.paths.CoursierPaths.cacheDirectoryPath()),
+      root(
+        PathVars.COURSIER_ARCHIVE_CACHE,
+        coursier.paths.CoursierPaths.archiveCacheDirectoryPath()
+      )
+    ).flatten.distinctBy(_._2)
+  }
 }

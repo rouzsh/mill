@@ -18,5 +18,11 @@ public interface PathVars {
 
   String HOME = "HOME";
 
+  /** The Coursier download cache (`COURSIER_CACHE`, or the OS-specific default). */
+  String COURSIER_CACHE = "COURSIER_CACHE";
+
+  /** The Coursier archive cache, which also holds the JVMs Mill downloads. */
+  String COURSIER_ARCHIVE_CACHE = "COURSIER_ARCHIVE_CACHE";
+
   String ROOT = "ROOT";
 }

@@ -27,7 +27,9 @@ object `package` extends MillStableScalaModule with BuildInfo {
       Deps.pprint,
       Deps.fansi,
       Deps.mainargs,
-      Deps.fastparse
+      Deps.fastparse,
+      // Only to locate the Coursier caches, as in `libs/util`.
+      Deps.coursierPaths.exclude("*" -> "*")
     )
   }
 
