@@ -16,6 +16,10 @@ class PipeStreams(val bufferSize: Int = 64 * 1024) { pipe =>
   private val buffer: Array[Byte] = new Array[Byte](bufferSize)
   private var in: Int = -1
   private var out = 0
+  // The thread reading the pipe, and whether it is waiting in `read` for more data. Waiting
+  // means it is done with everything it read before, which is what `awaitEmpty` waits for
+  private var readSide: Thread = null
+  private var readerWaiting = false
 
   val input: InputStream = Input
   private object Input extends InputStream {
@@ -89,12 +93,15 @@ class PipeStreams(val bufferSize: Int = 64 * 1024) { pipe =>
 
     override def read(): Int = synchronized {
       if (closedByReader) throw IOException("Pipe closed")
+      readSide = Thread.currentThread()
       while (in < 0) {
         if (closedByWriter) return -1 /* closed by writer, return EOF */
 
         /* might be a writer waiting */
+        readerWaiting = true
         notifyWaitCatch()
       }
+      readerWaiting = false
 
       val ret = buffer(out) & 0xff
       out += 1
@@ -146,8 +153,15 @@ class PipeStreams(val bufferSize: Int = 64 * 1024) { pipe =>
       else in + buffer.length - out
     }
 
+    /**
+     * Waits until the reader has read everything written so far and has come back to `read`
+     * for more, so it has also finished with what it read (e.g. written it out). Returns early
+     * if the read side is closed or the reading thread has died.
+     */
     def awaitEmpty(): Unit = synchronized {
-      while (in >= 0)
+      def drained = in < 0 && (readerWaiting || readSide == null)
+      def readerGone = closedByReader || (readSide != null && !readSide.isAlive)
+      while (!drained && !readerGone)
         try wait(100)
         catch { case _: InterruptedException => () }
     }

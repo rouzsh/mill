@@ -101,6 +101,40 @@ object PipeStreamsTests extends TestSuite {
 
       sortedGroups ==> expectedLists
     }
+    test("awaitEmptyWaitsForReaderToFinish") {
+      // The reader empties the pipe, then takes a while to handle what it read, like the
+      // PromptLogger pumper writing it out. `awaitInputEmpty` must wait for that too
+      val pipe = PipeStreams()
+      @volatile var handled = false
+      val reader = Thread(() => {
+        val buf = new Array[Byte](16)
+        pipe.input.read(buf)
+        Thread.sleep(500)
+        handled = true
+        pipe.input.read(buf): Unit
+      })
+      reader.start()
+      pipe.output.write("hello".getBytes)
+
+      pipe.awaitInputEmpty()
+      assert(handled)
+
+      pipe.output.close()
+      reader.join()
+    }
+    test("awaitEmptyReturnsWhenReaderDies") {
+      val pipe = PipeStreams()
+      val reader = Thread(() => pipe.input.read(new Array[Byte](16)): Unit)
+      reader.start()
+      pipe.output.write("hello".getBytes)
+      reader.join()
+
+      // The reader never comes back to read more, so this must not wait for it
+      val waiter = Thread(() => pipe.awaitInputEmpty())
+      waiter.start()
+      waiter.join(5000)
+      assert(!waiter.isAlive)
+    }
     // Not sure why this use case doesn't work yet
     //    test("multiThreadWriteMultiThreadRead"){ // multiple writes across different threads interleaved by reads
     //      val chunkSize = 20
