@@ -31,6 +31,10 @@ object BspConcurrencyTests extends UtestIntegrationTestSuite {
   implicit val retryMax: RetryMax = RetryMax(60000.millis)
   implicit val retryInterval: RetryInterval = RetryInterval(50.millis)
 
+  // The first BSP request in a fresh sandbox loads the build, compiling `build.mill`. On a
+  // busy CI runner that alone can take over 30 seconds.
+  private val firstRequestTimeoutSeconds = 120L
+
   private def gateFile(tester: IntegrationTester.Impl): os.Path =
     tester.workspacePath / "gated-sources-wait"
 
@@ -116,9 +120,10 @@ object BspConcurrencyTests extends UtestIntegrationTestSuite {
           millTestSuiteEnv,
           bspLog = Some((bytes, len) => bspStderr.write(bytes, 0, len))
         ) { (buildServer, _) =>
-          // Resolve target metadata first; this returns quickly because BSP
-          // doesn't evaluate `sources` for `workspaceBuildTargets`.
-          val targets = buildServer.workspaceBuildTargets().get(30, TimeUnit.SECONDS)
+          // Resolve target metadata first. BSP doesn't evaluate `sources` for
+          // `workspaceBuildTargets`, but this first request loads the build.
+          val targets =
+            buildServer.workspaceBuildTargets().get(firstRequestTimeoutSeconds, TimeUnit.SECONDS)
           val gatedTarget = targets.getTargets.asScala
             .find(_.getDisplayName == "gated").map(_.getId).getOrElse(
               throw new java.lang.AssertionError(
@@ -237,7 +242,8 @@ object BspConcurrencyTests extends UtestIntegrationTestSuite {
           millTestSuiteEnv,
           bspLog = Some((bytes, len) => bspStderr.write(bytes, 0, len))
         ) { (buildServer, _) =>
-          val targets = buildServer.workspaceBuildTargets().get(30, TimeUnit.SECONDS)
+          val targets =
+            buildServer.workspaceBuildTargets().get(firstRequestTimeoutSeconds, TimeUnit.SECONDS)
           val abTarget = targetByDisplayName(targets, "orderedAb")
           val baTarget = targetByDisplayName(targets, "orderedBa")
 
